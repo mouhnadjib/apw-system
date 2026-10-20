@@ -4,7 +4,8 @@ secrets/
 *.db
 __pycache__/
 .pytest_cache/
-node_modules/
-.venv/
-.dart_tool/
-build/
+demo/venv/
+demo/data/
+demo/demo.db
+demo/demo.env
+demo/DEMO-CODES.txt

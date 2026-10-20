@@ -35,9 +35,9 @@ class AppServices {
 
   Timer? _poller;
 
-  factory AppServices.create({TokenStore? store, DeviceAuth? auth}) {
+  factory AppServices.create({TokenStore? store, DeviceAuth? auth, String? baseUrl}) {
     final tokenStore = store ?? SecureTokenStore();
-    final api = ApiClient(baseUrl: AppConfig.apiBaseUrl, store: tokenStore);
+    final api = ApiClient(baseUrl: baseUrl ?? AppConfig.apiBaseUrl, store: tokenStore);
     final repo = Repository(api: api, store: tokenStore);
     final push = PushService();
     final session = SessionController(

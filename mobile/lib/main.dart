@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'app.dart';
 import 'core/config.dart';
 import 'core/format.dart';
+import 'core/server_address.dart';
 import 'services.dart';
 
 Future<void> main() async {
@@ -15,7 +16,8 @@ Future<void> main() async {
     return;
   }
 
-  final services = AppServices.create();
+  final savedAddress = AppConfig.demoMode ? await ServerAddressStore().read() : null;
+  final services = AppServices.create(baseUrl: savedAddress);
   runApp(ApwApp(services: services));
   services.session.boot();
 }

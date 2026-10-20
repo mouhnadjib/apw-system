@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../core/config.dart';
+import '../core/server_address.dart';
 import '../services.dart';
 
 class ActivationScreen extends StatefulWidget {
@@ -25,6 +27,58 @@ class _ActivationScreenState extends State<ActivationScreen> {
     if (!(_form.currentState?.validate() ?? false)) return;
     FocusScope.of(context).unfocus();
     await ServicesScope.of(context).session.activate(_phone.text.trim(), _code.text.trim());
+  }
+
+  Future<void> _editServer() async {
+    final api = ServicesScope.of(context).api;
+    final controller = TextEditingController(text: api.baseUrl);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        String? error;
+        return StatefulBuilder(
+          builder: (ctx, setLocal) => AlertDialog(
+            title: const Text('عنوان الخادم (نسخة العرض)'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  textDirection: TextDirection.ltr,
+                  keyboardType: TextInputType.url,
+                  decoration: InputDecoration(
+                    hintText: 'http://192.168.1.5:8000',
+                    errorText: error,
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+              FilledButton(
+                onPressed: () {
+                  final normalized = normalizeServerAddress(controller.text);
+                  if (normalized == null) {
+                    setLocal(() => error = 'عنوان غير صالح');
+                    return;
+                  }
+                  Navigator.pop(ctx, normalized);
+                },
+                child: const Text('حفظ'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    controller.dispose();
+    if (result == null) return;
+    await ServerAddressStore().write(result);
+    api.baseUrl = result;
+    if (mounted) setState(() {});
   }
 
   @override
@@ -126,6 +180,18 @@ class _ActivationScreenState extends State<ActivationScreen> {
                               : const Text('تفعيل'),
                         ),
                       ),
+                      if (AppConfig.demoMode) ...[
+                        const SizedBox(height: 12),
+                        TextButton.icon(
+                          onPressed: session.busy ? null : _editServer,
+                          icon: const Icon(Icons.dns_outlined),
+                          label: Text(
+                            'الخادم: ${ServicesScope.of(context).api.baseUrl}',
+                            textDirection: TextDirection.ltr,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),

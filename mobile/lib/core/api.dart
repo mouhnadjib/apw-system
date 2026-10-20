@@ -40,7 +40,8 @@ class ApiClient {
   })  : baseUrl = baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl,
         _http = client ?? http.Client();
 
-  final String baseUrl;
+  /// قابل للتغيير وقت التشغيل لنسخة العرض التجريبي فقط (انظر AppConfig.demoMode).
+  String baseUrl;
   final TokenStore store;
   final Duration timeout;
   final http.Client _http;

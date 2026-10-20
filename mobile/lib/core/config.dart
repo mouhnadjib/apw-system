@@ -11,6 +11,11 @@ class AppConfig {
   static const bool requireDeviceLock =
       bool.fromEnvironment('REQUIRE_DEVICE_LOCK', defaultValue: true);
 
+  /// نسخة العرض التجريبي: تسمح بعنوان http محلي وبتغيير عنوان الخادم من شاشة التفعيل.
+  /// لا تُستعمل مع النسخة الحقيقية:
+  ///   flutter build apk --debug --dart-define=DEMO_MODE=true
+  static const bool demoMode = bool.fromEnvironment('DEMO_MODE', defaultValue: false);
+
   static const Duration autoLockAfter = Duration(minutes: 2);
   static const Duration pollInterval = Duration(seconds: 60);
   static const Duration requestTimeout = Duration(seconds: 25);
@@ -19,7 +24,7 @@ class AppConfig {
   static String? validate() {
     final url = apiBaseUrl.trim();
     if (url.isEmpty) return 'لم يُضبط عنوان الخادم (API_BASE_URL).';
-    if (kReleaseMode && !url.startsWith('https://')) {
+    if (kReleaseMode && !demoMode && !url.startsWith('https://')) {
       return 'نسخة الإنتاج تتطلب عنوان خادم يبدأ بـ https://';
     }
     return null;
