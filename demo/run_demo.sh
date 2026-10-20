@@ -8,10 +8,14 @@ cd "$(dirname "$0")/.."
 D="$PWD/demo"
 mkdir -p "$D/data"
 
-if [ ! -d "$D/venv" ]; then
+# علامة نجاح التثبيت: إن انقطع التثبيت في المنتصف يُعاد من البداية في التشغيل التالي
+if [ ! -f "$D/venv/.installed" ]; then
+  echo "جارٍ تثبيت المكتبات (مرة واحدة، 3 إلى 5 دقائق، لا تقاطع)..."
+  rm -rf "$D/venv"
   python3 -m venv "$D/venv"
-  "$D/venv/bin/pip" install -q --upgrade pip
-  "$D/venv/bin/pip" install -q -r requirements.txt
+  "$D/venv/bin/pip" install --upgrade pip
+  "$D/venv/bin/pip" install -r requirements.txt
+  touch "$D/venv/.installed"
 fi
 PY="$D/venv/bin/python"
 
