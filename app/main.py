@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -6,16 +7,50 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from .db import Base, engine
+from .deps import client_ip
+from .ratelimit import limiter
+from .security import validate_config
 from .routers import admin, auth, deputy, public, staff
 
 logging.basicConfig(level=logging.INFO)
 
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    validate_config()  # يفشل الإقلاع بوضوح بدل أخطاء 500 لاحقة
+    yield
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="خادم المجلس الشعبي الولائي",
     docs_url=None,  # لا توثيق تفاعلي علني في الإنتاج
     redoc_url=None,
     openapi_url=None,
 )
+
+
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+MAX_JSON_BYTES = 256 * 1024
+_UPLOAD_SUFFIXES = ("/reply", "/photo")
+
+
+@app.middleware("http")
+async def guard_requests(request: Request, call_next):
+    """حدّ عام لكل IP وحدّ لحجم الجسم (الملفات حتى 20 ميغابايت، وغيرها 256 كيلوبايت)."""
+    if not request.url.path.startswith("/panel"):
+        ip = client_ip(request) or "?"
+        if not limiter.hit(f"global:{ip}", 600, 60):
+            return JSONResponse({"detail": "طلبات كثيرة، حاول لاحقاً"}, status_code=429)
+    if request.method in ("POST", "PUT", "PATCH"):
+        is_upload = request.url.path.endswith(_UPLOAD_SUFFIXES)
+        limit = MAX_UPLOAD_BYTES if is_upload else MAX_JSON_BYTES
+        try:
+            length = int(request.headers.get("content-length", "0"))
+        except ValueError:
+            return JSONResponse({"detail": "طلب غير صالح"}, status_code=400)
+        if length > limit:
+            return JSONResponse({"detail": "حجم الطلب كبير جداً"}, status_code=413)
+    return await call_next(request)
 
 
 @app.middleware("http")

@@ -23,7 +23,7 @@ class Settings(BaseSettings):
 
     max_login_failures: int = 5
     lockout_minutes: int = 15
-    max_invite_attempts: int = 5
+    max_invite_attempts: int = 25  # إجمالي عالمي لكل رمز دعوة (الحدّ لكل عنوان IP أضيق: انظر auth.py)
 
     max_scan_mb: int = 15
     max_photo_mb: int = 3

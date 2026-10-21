@@ -143,20 +143,124 @@ def test_device_binding_and_revocation(client, admin_h, world):
     assert client.post("/auth/refresh", json={"refresh_token": new["refresh_token"], "device_uid": a["uid"]}).status_code == 401
 
 
-def test_invite_lockout_and_staff_lockout(client, admin_h):
+def test_invite_and_staff_lockouts(client, admin_h):
     client.post("/admin/mandates", headers=admin_h, json={"label": "الدورة الحالية", "start_year": 2026, "end_year": 2031, "active": True})
     did = client.post("/admin/deputies", headers=admin_h, json={"full_name": "نائب", "phone": "0770000000"}).json()["id"]
     code = client.post(f"/admin/deputies/{did}/invite", headers=admin_h).json()["code"]
     body = {"phone": "0770000000", "device_uid": "device-uid-lock-1", "platform": "android"}
     for _ in range(5):
         assert client.post("/auth/activate", json={**body, "code": "AAAAA-BBBBB"}).status_code == 400
-    # بعد 5 محاولات خاطئة يُلغى الرمز حتى لو كان صحيحاً
-    assert client.post("/auth/activate", json={**body, "code": code}).status_code == 400
+    # بعد 5 محاولات خاطئة من العنوان نفسه يُحجب هذا العنوان لهذا الهاتف (حتى بالرمز الصحيح)
+    assert client.post("/auth/activate", json={**body, "code": code}).status_code == 429
+    # لكن الرمز نفسه لم يُحرق: من عنوان آخر يعمل
+    from app.ratelimit import limiter
 
-    # قفل حساب الموظف
+    limiter.clear()
+    assert client.post("/auth/activate", json={**body, "code": code}).status_code == 200
+
+    # قفل الموظف لكل (مستخدم، IP)
     for _ in range(5):
         assert client.post("/auth/staff/login", json={"username": "admin", "password": "wrong-password"}).status_code == 401
     assert client.post("/auth/staff/login", json={"username": "admin", "password": "admin-password-123"}).status_code == 429
+
+
+def test_attacker_cannot_lock_admin_out_from_other_ip(client, admin_h):
+    """هجوم تعطيل الحساب: محاولات خاطئة من IP آخر لا تمنع الأدمن الحقيقي."""
+    from app.ratelimit import limiter
+
+    s = __import__("app.config", fromlist=["get_settings"]).get_settings()
+    for _ in range(s.max_login_failures + 3):
+        limiter.add("login-fail:admin:6.6.6.6")  # عنوان المهاجم
+    assert client.post("/auth/staff/login", json={"username": "admin", "password": "admin-password-123"}).status_code == 200
+
+
+def test_distributed_attack_cap_per_username(client, admin_h):
+    from app.config import get_settings
+    from app.ratelimit import limiter
+
+    s = get_settings()
+    for i in range(s.max_login_failures * 6):
+        limiter.add("login-fail-total:admin")
+    assert client.post("/auth/staff/login", json={"username": "admin", "password": "admin-password-123"}).status_code == 429
+
+
+def test_ip_rate_limit_on_login(client):
+    codes = [client.post("/auth/staff/login", json={"username": f"u{i}", "password": "x"}).status_code for i in range(40)]
+    assert 429 in codes and codes.count(401) <= 30
+
+
+def test_cf_header_spoof_ignored_from_non_loopback(client, admin_h):
+    """TestClient يأتي من عنوان غير loopback، فيُتجاهل رأس cf-connecting-ip المنتحَل."""
+    client.post("/auth/staff/login", json={"username": "admin", "password": "wrong-password"}, headers={"cf-connecting-ip": "9.9.9.9"})
+    log = client.get("/admin/audit", headers=admin_h).json()
+    failed = [r for r in log if r["action"] == "login_failed"]
+    assert failed and failed[0]["ip"] != "9.9.9.9"
+
+
+def test_client_ip_trusts_header_only_from_loopback():
+    from types import SimpleNamespace
+
+    from app.deps import client_ip
+
+    def req(peer, cf=None):
+        h = {"cf-connecting-ip": cf} if cf else {}
+        return SimpleNamespace(client=SimpleNamespace(host=peer), headers=h)
+
+    assert client_ip(req("127.0.0.1", "1.2.3.4")) == "1.2.3.4"
+    assert client_ip(req("192.168.1.9", "1.2.3.4")) == "192.168.1.9"
+    assert client_ip(req("127.0.0.1")) == "127.0.0.1"
+
+
+def test_password_change_invalidates_old_staff_token(client, admin_h, world):
+    old_op = world["op"]
+    assert client.get("/staff/questions", headers=old_op).status_code == 200
+    ops = [u for u in client.get("/admin/staff", headers=admin_h).json() if u["username"] == "diwan"]
+    r = client.patch(f"/admin/staff/{ops[0]['id']}", headers=admin_h, json={"password": "brand-new-password-9"})
+    assert r.status_code == 200
+    assert client.get("/staff/questions", headers=old_op).status_code == 401
+    assert client.get("/staff/questions", headers=login(client, "diwan", "brand-new-password-9")).status_code == 200
+
+
+def test_body_size_limits(client, admin_h):
+    big = "x" * (300 * 1024)
+    r = client.post("/admin/staff", headers=admin_h, json={"username": "zzz", "full_name": big, "password": "a" * 20, "role": "operator"})
+    assert r.status_code == 413
+
+
+def test_startup_validation_rejects_bad_keys(monkeypatch):
+    from app import security
+    from app.config import get_settings
+
+    s = get_settings()
+    monkeypatch.setattr(s, "field_key", "")
+    import pytest
+
+    with pytest.raises(RuntimeError):
+        security.validate_config()
+    monkeypatch.setattr(s, "field_key", "not base64!!")
+    with pytest.raises(RuntimeError):
+        security.validate_config()
+
+
+def test_file_responses_are_sandboxed(client, admin_h, world):
+    a = world["a"]
+    q = client.post("/me/questions", headers=a["h"], json={"subject": "موضوع السؤال", "text": "نص السؤال الطويل بما يكفي"}).json()
+    for act in ("confirm", "refer"):
+        assert client.post(f"/staff/questions/{q['id']}/{act}", headers=world["op"]).status_code == 200
+    up = client.post(f"/staff/questions/{q['id']}/reply", headers=world["op"], files={"file": ("r.pdf", PDF, "application/pdf")})
+    assert up.status_code == 200, up.text
+    r = client.get(f"/me/questions/{q['id']}/reply", headers=a["h"])
+    assert r.headers["content-security-policy"] == "default-src 'none'; sandbox"
+    assert r.headers["x-content-type-options"] == "nosniff"
+
+
+def test_question_creation_rate_limit(client, world):
+    a = world["a"]
+    codes = [
+        client.post("/me/questions", headers=a["h"], json={"subject": f"موضوع {i}", "text": "نص السؤال الطويل بما يكفي"}).status_code
+        for i in range(22)
+    ]
+    assert codes.count(201) == 20 and codes[-1] == 429
 
 
 def test_mandate_is_five_years_and_switch_revokes(client, admin_h, world):

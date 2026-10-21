@@ -6,6 +6,7 @@ from .. import models, schemas, services
 from ..db import get_db
 from ..deps import audit, current_deputy, current_device
 from ..models import QStatus
+from ..ratelimit import limiter
 from ..security import utcnow
 
 router = APIRouter(prefix="/me", tags=["deputy"])
@@ -114,6 +115,8 @@ def create_question(
     me: models.Deputy = Depends(current_deputy),
     db: Session = Depends(get_db),
 ):
+    if not limiter.hit(f"question-create:{me.id}", 20, 3600):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "تجاوزت الحد المسموح من الأسئلة في الساعة")
     q = models.Question(deputy_id=me.id, subject=body.subject, text=body.text, status=QStatus.submitted)
     q.versions.append(models.QuestionVersion(subject=body.subject, text=body.text))
     q.events.append(models.QuestionEvent(status=QStatus.submitted, actor_type="deputy", actor_id=me.id))

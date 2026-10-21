@@ -1,3 +1,4 @@
+import hmac
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -7,7 +8,8 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..config import get_settings
 from ..db import get_db
-from ..deps import audit
+from ..deps import audit, client_ip
+from ..ratelimit import limiter
 from ..security import (
     as_utc,
     hash_password,
@@ -15,6 +17,7 @@ from ..security import (
     new_refresh_token,
     normalize_code,
     normalize_phone,
+    password_version,
     token_digest,
     utcnow,
     verify_password,
@@ -43,30 +46,49 @@ def _issue_device_tokens(device: models.Device) -> schemas.TokenOut:
     )
 
 
+def _too_many() -> HTTPException:
+    return HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "محاولات كثيرة، حاول لاحقاً")
+
+
+def _ip_gate(request: Request, scope: str, limit: int, window: float) -> str:
+    ip = client_ip(request) or "?"
+    if not limiter.hit(f"{scope}:{ip}", limit, window):
+        raise _too_many()
+    return ip
+
+
 @router.post("/staff/login", response_model=schemas.TokenOut)
 def staff_login(body: schemas.StaffLogin, request: Request, db: Session = Depends(get_db)):
+    """حماية متعدّدة الطبقات:
+    - حدّ عام لكل عنوان IP؛
+    - قفل لكل زوج (اسم مستخدم، IP): لا يستطيع مهاجم من الإنترنت قفل حساب الأدمن على صاحبه؛
+    - سقف إجمالي لكل اسم مستخدم ضد الهجوم الموزّع (أعلى بكثير فلا يُستعمل للتعطيل عملياً).
+    """
     s = get_settings()
+    ip = _ip_gate(request, "login-ip", 30, 600)
+    uname = body.username.strip().lower()
+    pair, total = f"login-fail:{uname}:{ip}", f"login-fail-total:{uname}"
+    window = s.lockout_minutes * 60
+    if limiter.count(pair, window) >= s.max_login_failures or limiter.count(total, window) >= s.max_login_failures * 6:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "الحساب مقفل مؤقتاً من هذا الجهاز، حاول لاحقاً")
     user = db.scalar(select(models.StaffUser).where(models.StaffUser.username == body.username))
+    ok = False
     if user is None:
         verify_password(body.password, _DUMMY_HASH)  # تسوية زمن الاستجابة
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "اسم المستخدم أو كلمة المرور غير صحيحة")
-    if user.locked_until and as_utc(user.locked_until) > utcnow():
-        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "الحساب مقفل مؤقتاً، حاول لاحقاً")
-    if not user.active or not verify_password(body.password, user.password_hash):
-        user.failed_logins += 1
-        if user.failed_logins >= s.max_login_failures:
-            user.locked_until = utcnow() + timedelta(minutes=s.lockout_minutes)
-            user.failed_logins = 0
-            audit(db, request, "staff", user.id, "login_locked", user.username)
-        else:
-            audit(db, request, "staff", user.id, "login_failed", user.username)
+    else:
+        ok = verify_password(body.password, user.password_hash) and user.active
+    if not ok:
+        limiter.add(pair)
+        limiter.add(total)
+        audit(db, request, "staff", user.id if user else None, "login_failed", body.username[:64])
         db.commit()
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "اسم المستخدم أو كلمة المرور غير صحيحة")
-    user.failed_logins = 0
-    user.locked_until = None
+    limiter.clear(pair)
     audit(db, request, "staff", user.id, "login", user.username)
     db.commit()
-    token = make_access_token(user.id, "staff", s.access_minutes_staff, role=user.role.value)
+    token = make_access_token(
+        user.id, "staff", s.access_minutes_staff, role=user.role.value, pv=password_version(user.password_hash)
+    )
     return schemas.TokenOut(access_token=token, expires_in=s.access_minutes_staff * 60)
 
 
@@ -74,7 +96,12 @@ def staff_login(body: schemas.StaffLogin, request: Request, db: Session = Depend
 def activate(body: schemas.ActivateIn, request: Request, db: Session = Depends(get_db)):
     """تفعيل حساب النائب برمز الدعوة وربط الجهاز."""
     s = get_settings()
+    ip = _ip_gate(request, "activate-ip", 30, 600)
     phone = normalize_phone(body.phone)
+    pair = f"activate-fail:{phone}:{ip}"
+    # لا يستطيع غريب حرق رمز دعوة نائب بمحاولات خاطئة: الحدّ لكل (هاتف، IP)
+    if limiter.count(pair, 900) >= 5:
+        raise _too_many()
     deputy = db.scalar(
         select(models.Deputy)
         .join(models.Mandate)
@@ -96,16 +123,21 @@ def activate(body: schemas.ActivateIn, request: Request, db: Session = Depends(g
             .order_by(models.Invitation.id.desc())
         )
     if not deputy or not inv or as_utc(inv.expires_at) <= utcnow():
+        limiter.add(pair)
         raise HTTPException(status.HTTP_400_BAD_REQUEST, _BAD_ACTIVATION)
 
-    if token_digest(normalize_code(body.code)) != inv.code_digest:
+    if not hmac.compare_digest(token_digest(normalize_code(body.code)), inv.code_digest):
+        limiter.add(pair)
         inv.attempts += 1
         if inv.attempts >= s.max_invite_attempts:
             inv.revoked = True
             audit(db, request, "deputy", deputy.id, "invite_revoked_attempts", f"deputy:{deputy.id}")
+        else:
+            audit(db, request, "deputy", deputy.id, "activate_failed", f"deputy:{deputy.id}")
         db.commit()
         raise HTTPException(status.HTTP_400_BAD_REQUEST, _BAD_ACTIVATION)
 
+    limiter.clear(pair)
     inv.used_at = utcnow()
     for old in db.scalars(
         select(models.Device).where(models.Device.deputy_id == deputy.id, models.Device.active.is_(True))
@@ -129,7 +161,8 @@ def activate(body: schemas.ActivateIn, request: Request, db: Session = Depends(g
 
 
 @router.post("/refresh", response_model=schemas.TokenOut)
-def refresh(body: schemas.RefreshIn, db: Session = Depends(get_db)):
+def refresh(body: schemas.RefreshIn, request: Request, db: Session = Depends(get_db)):
+    _ip_gate(request, "refresh-ip", 120, 60)
     digest = token_digest(body.refresh_token)
     device = db.scalar(select(models.Device).where(models.Device.refresh_digest == digest))
     if device is None:
@@ -156,7 +189,8 @@ def refresh(body: schemas.RefreshIn, db: Session = Depends(get_db)):
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-def logout(body: schemas.LogoutIn, db: Session = Depends(get_db)):
+def logout(body: schemas.LogoutIn, request: Request, db: Session = Depends(get_db)):
+    _ip_gate(request, "logout-ip", 60, 60)
     device = db.scalar(
         select(models.Device).where(models.Device.refresh_digest == token_digest(body.refresh_token))
     )

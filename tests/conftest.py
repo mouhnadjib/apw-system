@@ -21,6 +21,15 @@ from app.security import hash_password
 ADMIN_PW = "admin-password-123"
 
 
+@pytest.fixture(autouse=True)
+def _reset_limiter():
+    from app.ratelimit import limiter
+
+    limiter.clear()
+    yield
+    limiter.clear()
+
+
 @pytest.fixture()
 def client():
     Base.metadata.drop_all(engine)

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from . import models
 from .db import get_db
-from .security import decode_token
+from .security import decode_token, password_version
 
 bearer = HTTPBearer(auto_error=False)
 
@@ -33,6 +33,9 @@ def current_staff(
     user = db.get(models.StaffUser, int(payload["sub"]))
     if not user or not user.active:
         raise _unauthorized()
+    # تغيير كلمة المرور يُسقط الرموز القديمة فوراً
+    if payload.get("pv") != password_version(user.password_hash):
+        raise _unauthorized("انتهت الجلسة، سجّل الدخول من جديد")
     return user
 
 
@@ -65,9 +68,18 @@ def current_deputy(
     return db.get(models.Deputy, device.deputy_id)
 
 
+_LOOPBACK = {"127.0.0.1", "::1"}
+
+
 def client_ip(request: Request) -> str | None:
-    # خلف Cloudflare Tunnel يصل العنوان الحقيقي في هذا الرأس
-    return request.headers.get("cf-connecting-ip") or (request.client.host if request.client else None)
+    """عنوان العميل. رأس cf-connecting-ip لا يُصدَّق إلا إذا جاء الطلب من الجهاز نفسه
+    (أي من النفق cloudflared)؛ أي اتصال آخر (شبكة محلية مثلاً) لا يستطيع انتحال العنوان."""
+    peer = request.client.host if request.client else None
+    if peer in _LOOPBACK:
+        cf = request.headers.get("cf-connecting-ip", "").strip()
+        if cf and len(cf) <= 45:
+            return cf
+    return peer
 
 
 def audit(

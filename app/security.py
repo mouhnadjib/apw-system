@@ -56,11 +56,19 @@ def validate_password_strength(password: str) -> None:
         raise ValueError("كلمة المرور يجب ألا تقل عن 12 حرفاً")
 
 
+def password_version(password_hash: str) -> str:
+    """بصمة قصيرة لكلمة المرور الحالية تُضمَّن في رمز الموظف لإبطاله عند تغييرها."""
+    return hashlib.sha256(password_hash.encode()).hexdigest()[:16]
+
+
 # ---------- المفاتيح ----------
 def _load_key(value: str, name: str) -> bytes:
     if not value:
         raise RuntimeError(f"المفتاح {name} غير مضبوط في الإعدادات")
-    raw = base64.b64decode(value)
+    try:
+        raw = base64.b64decode(value, validate=True)
+    except Exception as e:
+        raise RuntimeError(f"المفتاح {name} ليس base64 صالحاً") from e
     if len(raw) != 32:
         raise RuntimeError(f"المفتاح {name} يجب أن يكون 32 بايت (base64)")
     return raw
@@ -79,6 +87,14 @@ def _secret() -> bytes:
     if len(s) < 32:
         raise RuntimeError("APW_JWT_SECRET يجب ألا يقل عن 32 حرفاً")
     return s.encode()
+
+
+def validate_config() -> None:
+    """يفشل مبكراً عند الإقلاع إن كان أي مفتاح غير مضبوط أو معطوباً."""
+    s = get_settings()
+    _load_key(s.file_key, "APW_FILE_KEY")
+    _load_key(s.field_key, "APW_FIELD_KEY")
+    _secret()
 
 
 # ---------- تشفير الحقول ----------

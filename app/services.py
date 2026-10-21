@@ -71,6 +71,7 @@ def file_response(rel: str, mime: str, name: str) -> Response:
             "Content-Disposition": f'inline; filename="{name}"',
             "Cache-Control": "no-store",
             "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'; sandbox",
         },
     )
 

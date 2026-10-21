@@ -4,6 +4,7 @@
   python demo/seed.py            # تعبئة إن كانت القاعدة فارغة
   python demo/seed.py --reset    # حذف كل شيء وإعادة التعبئة
 """
+import secrets
 import shutil
 import struct
 import sys
@@ -23,8 +24,9 @@ from app.models import (
 from app.security import hash_password, new_invite_code, normalize_code, save_encrypted, token_digest, utcnow
 from app.services import set_setting
 
-ADMIN = ("admin", "Demo-Admin-2026!")
-OPERATOR = ("cabinet", "Demo-Cabinet-2026!")
+# كلمات مرور عشوائية في كل تعبئة (لا كلمات ثابتة منشورة): تُطبع وتُحفظ في DEMO-CODES.txt
+ADMIN = ("admin", "Demo-" + secrets.token_urlsafe(12))
+OPERATOR = ("cabinet", "Demo-" + secrets.token_urlsafe(12))
 
 NAMES = [
     ("عبد الرحمان بن يوسف", "رئيس المجلس", [0]),

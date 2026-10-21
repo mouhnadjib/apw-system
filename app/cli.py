@@ -34,6 +34,13 @@ def main(argv: list[str]) -> int:
     from .security import hash_password, validate_password_strength
 
     if cmd == "init-db":
+        from .security import validate_config
+
+        try:
+            validate_config()
+        except RuntimeError as e:
+            print(f"خطأ في الإعدادات: {e}")
+            return 2
         init_db()
         print("تم إنشاء الجداول")
         return 0
