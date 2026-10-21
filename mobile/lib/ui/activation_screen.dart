@@ -15,70 +15,37 @@ class _ActivationScreenState extends State<ActivationScreen> {
   final _form = GlobalKey<FormState>();
   final _phone = TextEditingController();
   final _code = TextEditingController();
+  final _server = TextEditingController();
+  bool _serverInit = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_serverInit && AppConfig.demoMode) {
+      _serverInit = true;
+      _server.text = ServicesScope.of(context).api.baseUrl;
+    }
+  }
 
   @override
   void dispose() {
     _phone.dispose();
     _code.dispose();
+    _server.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
     if (!(_form.currentState?.validate() ?? false)) return;
     FocusScope.of(context).unfocus();
+    if (AppConfig.demoMode) {
+      final normalized = normalizeServerAddress(_server.text);
+      if (normalized == null) return;
+      ServicesScope.of(context).api.baseUrl = normalized;
+      await ServerAddressStore().write(normalized);
+    }
+    if (!mounted) return;
     await ServicesScope.of(context).session.activate(_phone.text.trim(), _code.text.trim());
-  }
-
-  Future<void> _editServer() async {
-    final api = ServicesScope.of(context).api;
-    final controller = TextEditingController(text: api.baseUrl);
-    final result = await showDialog<String>(
-      context: context,
-      builder: (ctx) {
-        String? error;
-        return StatefulBuilder(
-          builder: (ctx, setLocal) => AlertDialog(
-            title: const Text('عنوان الخادم (نسخة العرض)'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  controller: controller,
-                  autofocus: true,
-                  textDirection: TextDirection.ltr,
-                  keyboardType: TextInputType.url,
-                  decoration: InputDecoration(
-                    hintText: 'http://192.168.1.5:8000',
-                    errorText: error,
-                    border: const OutlineInputBorder(),
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
-              FilledButton(
-                onPressed: () {
-                  final normalized = normalizeServerAddress(controller.text);
-                  if (normalized == null) {
-                    setLocal(() => error = 'عنوان غير صالح');
-                    return;
-                  }
-                  Navigator.pop(ctx, normalized);
-                },
-                child: const Text('حفظ'),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-    controller.dispose();
-    if (result == null) return;
-    await ServerAddressStore().write(result);
-    api.baseUrl = result;
-    if (mounted) setState(() {});
   }
 
   @override
@@ -122,6 +89,22 @@ class _ActivationScreenState extends State<ActivationScreen> {
                         style: TextStyle(color: scheme.outline),
                       ),
                       const SizedBox(height: 20),
+                      if (AppConfig.demoMode) ...[
+                        TextFormField(
+                          controller: _server,
+                          textDirection: TextDirection.ltr,
+                          keyboardType: TextInputType.url,
+                          autocorrect: false,
+                          decoration: const InputDecoration(
+                            labelText: 'عنوان الخادم (نسخة العرض)',
+                            hintText: 'http://192.168.1.5:8000',
+                            prefixIcon: Icon(Icons.dns_outlined),
+                            border: OutlineInputBorder(),
+                          ),
+                          validator: (v) => normalizeServerAddress(v ?? '') == null ? 'عنوان غير صالح' : null,
+                        ),
+                        const SizedBox(height: 16),
+                      ],
                       TextFormField(
                         controller: _phone,
                         keyboardType: TextInputType.phone,
@@ -180,18 +163,6 @@ class _ActivationScreenState extends State<ActivationScreen> {
                               : const Text('تفعيل'),
                         ),
                       ),
-                      if (AppConfig.demoMode) ...[
-                        const SizedBox(height: 12),
-                        TextButton.icon(
-                          onPressed: session.busy ? null : _editServer,
-                          icon: const Icon(Icons.dns_outlined),
-                          label: Text(
-                            'الخادم: ${ServicesScope.of(context).api.baseUrl}',
-                            textDirection: TextDirection.ltr,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
                     ],
                   ),
                 ),
