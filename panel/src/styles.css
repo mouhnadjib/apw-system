@@ -113,3 +113,21 @@ tr.click { cursor: pointer; }
   .grid2 { grid-template-columns: 1fr; }
   .main { padding: 1rem; }
 }
+
+/* ---------- ورقة الطباعة (ترويسة المجلس) ---------- */
+.print-sheet { display: none; }
+@media print {
+  @page { size: A4; margin: 22mm 20mm; }
+  html, body { background: #fff !important; }
+  #root { display: none !important; }
+  .print-sheet {
+    display: block; color: #000; direction: rtl;
+    font-family: "Traditional Arabic", "Amiri", "Simplified Arabic", "Times New Roman", serif;
+    font-size: 15pt; line-height: 1.9;
+  }
+  .print-sheet .ps-republic { text-align: center; font-weight: bold; font-size: 17pt; margin-bottom: 1.2rem; }
+  .print-sheet .ps-head { text-align: right; font-weight: bold; margin-bottom: 1.4rem; line-height: 1.6; }
+  .print-sheet .ps-line { margin: .25rem 0; }
+  .print-sheet .ps-body { white-space: pre-wrap; margin-top: 1.4rem; text-align: justify; }
+  .print-sheet .ps-sign { margin-top: 2.5rem; text-align: left; font-weight: bold; }
+}

@@ -79,30 +79,6 @@ class Profile {
       );
 }
 
-class DeputyPublic {
-  DeputyPublic({
-    required this.id,
-    required this.fullName,
-    this.title,
-    required this.hasPhoto,
-    required this.committees,
-  });
-
-  final int id;
-  final String fullName;
-  final String? title;
-  final bool hasPhoto;
-  final List<String> committees;
-
-  factory DeputyPublic.fromJson(Map<String, dynamic> j) => DeputyPublic(
-        id: j['id'] as int,
-        fullName: j['full_name'] as String,
-        title: j['title'] as String?,
-        hasPhoto: j['has_photo'] as bool,
-        committees: (j['committees'] as List).cast<String>(),
-      );
-}
-
 class AppNotification {
   AppNotification({
     required this.id,

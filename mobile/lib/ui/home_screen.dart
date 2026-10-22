@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../models/models.dart';
 import '../services.dart';
-import 'deputies_screen.dart';
 import 'legal_screen.dart';
 import 'notifications_screen.dart';
 import 'question_form_screen.dart';
@@ -108,7 +107,6 @@ class _HomeScreenState extends State<HomeScreen> {
         children: const [
           NotificationsScreen(),
           QuestionsScreen(),
-          DeputiesScreen(),
           LegalScreen(),
         ],
       ),
@@ -153,11 +151,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: const Icon(Icons.help),
                 ),
                 label: 'الأسئلة',
-              ),
-              const NavigationDestination(
-                icon: Icon(Icons.groups_outlined),
-                selectedIcon: Icon(Icons.groups),
-                label: 'النواب',
               ),
               const NavigationDestination(
                 icon: Icon(Icons.gavel_outlined),

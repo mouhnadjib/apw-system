@@ -75,9 +75,6 @@ class Repository {
 
   Future<BinaryResponse> questionReply(int id) => api.getBytes('/me/questions/$id/reply');
 
-  // ---------- النواب ----------
-  Future<List<DeputyPublic>> deputies() async =>
-      _list(await api.getJson('/me/deputies')).map(DeputyPublic.fromJson).toList();
-
-  Future<Uint8List> deputyPhoto(int id) async => (await api.getBytes('/me/deputies/$id/photo')).bytes;
+  /// صورة النائب نفسه فقط (لا يُعرض النواب الآخرون في التطبيق).
+  Future<Uint8List> myPhoto() async => (await api.getBytes('/me/photo')).bytes;
 }

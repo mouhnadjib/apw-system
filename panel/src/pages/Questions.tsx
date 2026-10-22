@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
 import type { QStatus, QuestionDetail as QD, QuestionRow } from "../types";
+import { PrintSheet, copyText, questionPlainText } from "./PrintSheet";
 import { Alert, Loading, Modal, STATUS_AR, StatusBadge, errMsg, fmtDate, useLoad } from "../ui";
 
 const FILTERS: (QStatus | "all" | "todo")[] = ["todo", "all", "submitted", "under_review", "returned", "confirmed", "referred", "answered"];
@@ -145,6 +146,18 @@ export function QuestionDetail() {
           <div className="card">
             <h3>نص السؤال</h3>
             <div className="qtext">{q.text}</div>
+            <div className="row" style={{ marginTop: ".7rem" }}>
+              <button className="small" onClick={() => window.print()}>🖨 طباعة بترويسة المجلس</button>
+              <button
+                className="small"
+                onClick={async () =>
+                  setMsg((await copyText(questionPlainText(q))) ? { kind: "ok", text: "نُسخ نص السؤال كاملاً" } : { kind: "err", text: "تعذّر النسخ" })
+                }
+              >
+                نسخ النص كاملاً
+              </button>
+            </div>
+            <PrintSheet q={q} />
             {s === "returned" && q.return_note && <div className="note"><strong>ملاحظة الإرجاع:</strong> {q.return_note}</div>}
             {q.versions && q.versions.length > 1 && (
               <>

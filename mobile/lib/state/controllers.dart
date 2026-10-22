@@ -84,15 +84,7 @@ class QuestionsController extends ListController<QuestionRow> {
   Future<List<QuestionRow>> fetch() => repo.questions();
 }
 
-class DeputiesController extends ListController<DeputyPublic> {
-  DeputiesController(this.repo);
-  final Repository repo;
-
-  @override
-  Future<List<DeputyPublic>> fetch() => repo.deputies();
-}
-
-/// ذاكرة مؤقتة لصور النواب (في الذاكرة فقط، وتُمسح عند القفل أو الخروج).
+/// ذاكرة مؤقتة لصورة النائب نفسه (في الذاكرة فقط، وتُمسح عند القفل أو الخروج).
 class PhotoCache {
   PhotoCache(this.repo);
   final Repository repo;
@@ -101,7 +93,7 @@ class PhotoCache {
   Future<Uint8List?> get(int deputyId) {
     return _cache.putIfAbsent(deputyId, () async {
       try {
-        return await repo.deputyPhoto(deputyId);
+        return await repo.myPhoto();
       } on ApiException {
         _cache.remove(deputyId); // لإعادة المحاولة لاحقاً
         return null;

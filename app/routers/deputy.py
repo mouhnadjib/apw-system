@@ -35,32 +35,13 @@ def set_fcm_token(
     db.commit()
 
 
-# ---------- نواب الدورة ----------
-@router.get("/deputies", response_model=list[schemas.DeputyPublicOut])
-def directory(me: models.Deputy = Depends(current_deputy), db: Session = Depends(get_db)):
-    rows = db.scalars(
-        select(models.Deputy)
-        .where(models.Deputy.mandate_id == me.mandate_id, models.Deputy.active.is_(True))
-        .order_by(models.Deputy.full_name)
-    ).all()
-    return [
-        schemas.DeputyPublicOut(
-            id=d.id,
-            full_name=d.full_name,
-            title=d.title,
-            has_photo=bool(d.photo_path),
-            committees=[c.name for c in d.committees],
-        )
-        for d in rows
-    ]
-
-
-@router.get("/deputies/{deputy_id}/photo")
-def photo(deputy_id: int, me: models.Deputy = Depends(current_deputy), db: Session = Depends(get_db)):
-    d = db.get(models.Deputy, deputy_id)
-    if not d or d.mandate_id != me.mandate_id or not d.active:
+# ---------- صورة النائب نفسه ----------
+# لا يُعرض النواب الآخرون في تطبيق النائب: لا دليل ولا صور لغيره.
+@router.get("/photo")
+def my_photo(me: models.Deputy = Depends(current_deputy)):
+    if not me.photo_path:
         raise HTTPException(404, "غير موجود")
-    return services.photo_response(d)
+    return services.photo_response(me)
 
 
 # ---------- الإشعارات ----------

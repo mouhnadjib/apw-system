@@ -16,15 +16,15 @@ def test_full_question_flow(client, admin_h, world):
     # صورة النائب
     r = client.put(f"/admin/deputies/{a['id']}/photo", headers=admin_h, files={"file": ("p.png", PNG, "image/png")})
     assert r.status_code == 204
-    r = client.get(f"/me/deputies/{a['id']}/photo", headers=b["h"])
+    r = client.get("/me/photo", headers=a["h"])
     assert r.status_code == 200 and r.content == PNG
+    # لا يمكن للنائب رؤية صورة غيره ولا دليل النواب
+    assert client.get(f"/me/deputies/{a['id']}/photo", headers=b["h"]).status_code == 404
+    assert client.get("/me/deputies", headers=a["h"]).status_code == 404
+    assert client.get("/me/photo", headers=b["h"]).status_code == 404
     # الصورة على القرص مشفّرة
     for p in (get_settings().data_dir / "files").rglob("*.enc"):
         assert PNG not in p.read_bytes()
-
-    # دليل النواب: بلا أرقام هواتف
-    lst = client.get("/me/deputies", headers=a["h"]).json()
-    assert len(lst) == 2 and all("phone" not in d for d in lst)
 
     # السؤال
     q = client.post("/me/questions", headers=a["h"], json={"subject": "طريق ولائي متدهور", "text": "ما هي إجراءات الجهاز التنفيذي لصيانة الطريق الولائي؟"})

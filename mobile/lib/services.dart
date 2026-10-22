@@ -19,7 +19,6 @@ class AppServices {
     required this.session,
     required this.notifications,
     required this.questions,
-    required this.deputies,
     required this.photos,
     required this.push,
   });
@@ -29,7 +28,6 @@ class AppServices {
   final SessionController session;
   final NotificationsController notifications;
   final QuestionsController questions;
-  final DeputiesController deputies;
   final PhotoCache photos;
   final PushService push;
 
@@ -52,7 +50,6 @@ class AppServices {
       session: session,
       notifications: NotificationsController(repo),
       questions: QuestionsController(repo),
-      deputies: DeputiesController(repo),
       photos: PhotoCache(repo),
       push: push,
     );
@@ -71,7 +68,6 @@ class AppServices {
 
   void _start() {
     refreshAll(silent: false);
-    deputies.load();
     _poller?.cancel();
     _poller = Timer.periodic(AppConfig.pollInterval, (_) => refreshAll());
     push.start(
@@ -92,7 +88,6 @@ class AppServices {
     // المحتوى لا يبقى في الذاكرة بعد القفل أو الخروج
     notifications.clear();
     questions.clear();
-    deputies.clear();
     photos.clear();
     if (wipe) push.stop();
   }
